@@ -9,6 +9,7 @@ import AppLayout from './components/AppLayout';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import SharedItineraryPage from './pages/SharedItineraryPage';
+import LandingPage from './pages/LandingPage';
 
 // Protected pages
 import DashboardPage from './pages/DashboardPage';
@@ -49,9 +50,6 @@ function AdminRoute({ children }) {
 function AppRoutes() {
   return (
     <Routes>
-      {/* Root redirects directly to Dashboard / Login */}
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
-
       {/* Public Authentication & Shared Routes */}
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
@@ -73,6 +71,8 @@ function AppRoutes() {
         <Route path="/admin" element={<AdminRoute><AdminAnalyticsPage /></AdminRoute>} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Route>
+      {/* Default route */}
+      <Route path="/" element={<LandingPage />} />
     </Routes>
   );
 }
