@@ -1,15 +1,29 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTrips } from '../context/TripContext';
 import { mockDestinations, mockBudgetOverview } from '../services/mockData';
 import AITripGeneratorModal from '../components/AITripGeneratorModal';
+import { exploreApi } from '../services/api';
 
 export default function DashboardPage() {
   const { user } = useAuth();
   const { trips } = useTrips();
   const navigate = useNavigate();
   const [showAIGenerator, setShowAIGenerator] = useState(false);
+  const [recommended, setRecommended] = useState([]);
+
+  useEffect(() => {
+    async function loadRecommended() {
+      try {
+        const res = await exploreApi.getDestinations();
+        setRecommended(res.destinations?.slice(0, 3) || []);
+      } catch (err) {
+        console.warn('Failed to load recommended destinations:', err);
+      }
+    }
+    loadRecommended();
+  }, []);
 
   const upcomingTrips = trips.filter((t) => t.status === 'upcoming' || t.status === 'planning');
 
@@ -216,7 +230,7 @@ export default function DashboardPage() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {mockDestinations.slice(0, 3).map((dest) => (
+            {recommended.map((dest) => (
               <div
                 key={dest.id}
                 onClick={() => navigate(`/explore?destination=${dest.id}`)}
@@ -234,8 +248,8 @@ export default function DashboardPage() {
 
                 <div className="flex justify-between items-start mb-1">
                   <div>
-                    <h3 className="text-base font-bold text-[#2A180C]">{dest.name}</h3>
-                    <p className="text-xs text-[#8A715F] font-medium">{dest.state}, {dest.country}</p>
+                    <h3 className="text-base font-bold text-[#2A180C]">{dest.name.split(',')[0]}</h3>
+                    <p className="text-xs text-[#8A715F] font-medium">{dest.state || dest.name.split(',')[1]?.trim()}, {dest.country}</p>
                   </div>
                   <span className="text-[11px] font-bold text-[#C88A4B] bg-[#FAF7F2] border border-[#EADBCE] px-2 py-0.5 rounded-md">
                     {dest.category}

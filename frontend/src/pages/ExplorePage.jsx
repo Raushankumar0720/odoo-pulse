@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { mockDestinations, mockActivities } from '../services/mockData';
+import { mockDestinations } from '../services/mockData';
 import { useTrips } from '../context/TripContext';
+import { exploreApi } from '../services/api';
 
 const REGIONS = ['All', 'North India', 'North East India', 'Islands', 'International'];
 const ACTIVITY_TYPES = ['All', 'Spiritual', 'Heritage', 'Nature', 'Adventure', 'Food & Dining', 'Culture'];
@@ -39,6 +40,11 @@ export default function ExplorePage() {
   const [userCoords, setUserCoords] = useState(null);
   const [locating, setLocating] = useState(false);
   const [locError, setLocError] = useState(null);
+
+  // Dynamic backend explore data states
+  const [destinations, setDestinations] = useState([]);
+  const [activities, setActivities] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [selectedMapDest, setSelectedMapDest] = useState(mockDestinations[0]);
 
   // Detect user's current location via browser GPS
@@ -59,9 +65,9 @@ export default function ExplorePage() {
         setLocating(false);
       },
       (err) => {
-        // Fallback demo coordinates: New Delhi, India
+        console.warn('Geolocation error:', err.message);
+        // Fallback reference (New Delhi)
         setUserCoords({ lat: 28.6139, lng: 77.2090, isFallback: true });
-        setLocError('Location access blocked or timeout. Using New Delhi as reference.');
         setLocating(false);
       },
       { timeout: 8000 }
@@ -73,27 +79,43 @@ export default function ExplorePage() {
     handleDetectLocation();
   }, []);
 
-  // Filter Cities
-  const filteredCities = mockDestinations.filter((dest) => {
-    const matchQuery =
-      dest.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      dest.country.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      dest.state.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchRegion = selectedRegion === 'All' || dest.region === selectedRegion;
-    const matchCategory = selectedCategory === 'All' || dest.category === selectedCategory;
-    const matchCost = selectedCostIndex === 'All' || dest.costIndex === selectedCostIndex;
-    return matchQuery && matchRegion && matchCategory && matchCost;
-  });
+  // Fetch explore data dynamically from backend
+  useEffect(() => {
+    async function loadExploreData() {
+      setLoading(true);
+      try {
+        const params = {};
+        if (searchQuery) params.search = searchQuery;
+        if (selectedRegion !== 'All') params.region = selectedRegion;
+        if (selectedCategory !== 'All') params.category = selectedCategory;
+        if (selectedCostIndex !== 'All') params.price = selectedCostIndex;
+        if (userCoords) {
+          params.userLat = userCoords.lat;
+          params.userLng = userCoords.lng;
+        }
 
-  // Filter Activities
-  const filteredActivities = mockActivities.filter((act) => {
-    const matchQuery =
-      act.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      act.city.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      act.description.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchType = selectedCategory === 'All' || act.category === selectedCategory;
-    return matchQuery && matchType;
-  });
+        const destData = await exploreApi.getDestinations(params);
+        const fetchedDests = destData.destinations || [];
+        setDestinations(fetchedDests);
+        
+        // Update selectedMapDest if the list changes
+        if (fetchedDests.length > 0) {
+          setSelectedMapDest(fetchedDests[0]);
+        }
+
+        const actParams = {};
+        if (searchQuery) actParams.search = searchQuery;
+        if (selectedCategory !== 'All') actParams.category = selectedCategory;
+        const actData = await exploreApi.getActivities(actParams);
+        setActivities(actData.activities || []);
+      } catch (err) {
+        console.error('Failed to fetch explore data:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadExploreData();
+  }, [searchQuery, selectedRegion, selectedCategory, selectedCostIndex, userCoords]);
 
   const handleAddToTrip = (item, type = 'city') => {
     setAddedActivity(`Added ${item.name} to trip wishlist!`);
@@ -197,7 +219,7 @@ export default function ExplorePage() {
         </button>
       </div>
 
-      {/* ── Search & Filter Controls (For Cities & Activities) ── */}
+      {/* ── Search & Filter Controls ── */}
       {activeTab !== 'map' && (
         <div className="bg-white rounded-3xl p-5 border border-[#EADBCE] shadow-warm-md mb-8 space-y-4">
           <div className="relative">
@@ -246,246 +268,269 @@ export default function ExplorePage() {
         </div>
       )}
 
-      {/* ── TAB 1: CITIES WITH LIVE DISTANCE BADGES ── */}
-      {activeTab === 'cities' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredCities.map((dest) => {
-            const dist = getDistanceDisplay(dest);
-            return (
-              <div
-                key={dest.id}
-                className="bg-white rounded-3xl overflow-hidden border border-[#EADBCE] shadow-warm-md hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group"
-              >
-                <div>
-                  <div className="relative h-48 w-full overflow-hidden">
-                    <img
-                      src={dest.image}
-                      alt={dest.name}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
-                    
-                    {/* Badge */}
-                    <span className="absolute top-3 left-3 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#D4A373] text-[#2A180C] shadow-sm">
-                      {dest.badge}
-                    </span>
-
-                    {/* Live Distance Pill */}
-                    {dist && (
-                      <span className="absolute bottom-3 left-3 bg-black/65 backdrop-blur-md text-white text-[11px] font-bold px-3 py-1 rounded-full flex items-center gap-1">
-                        <span className="material-symbols-outlined text-xs text-[#E8C59A]">near_me</span>
-                        <span>{dist.km.toLocaleString()} km away ({dist.miles.toLocaleString()} mi)</span>
-                      </span>
-                    )}
-
-                    <span className="absolute top-3 right-3 px-2 py-0.5 rounded bg-black/50 text-white text-[10px] font-bold">
-                      {dest.costIndex}
-                    </span>
-                  </div>
-
-                  <div className="p-5">
-                    <div className="flex justify-between items-start mb-1">
-                      <div>
-                        <h3 className="text-lg font-bold text-[#2A180C]">{dest.name}</h3>
-                        <p className="text-xs text-[#8A715F]">{dest.state}, {dest.country}</p>
-                      </div>
-                      <span className="text-xs font-bold text-[#C88A4B] bg-[#FAF7F2] border border-[#EADBCE] px-2 py-0.5 rounded-lg">
-                        Best: {dest.bestTime}
-                      </span>
-                    </div>
-
-                    <p className="text-xs text-[#6B5646] line-clamp-2 mt-2 leading-relaxed">{dest.description}</p>
-                  </div>
-                </div>
-
-                <div className="p-5 pt-0 border-t border-[#EADBCE]/60 flex items-center justify-between gap-2 mt-2">
-                  <button
-                    onClick={() => {
-                      setSelectedMapDest(dest);
-                      setActiveTab('map');
-                    }}
-                    className="bg-[#FAF7F2] hover:bg-[#F5ECE1] border border-[#D8C6B6] text-[#4A2E18] px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-sm text-[#C88A4B]">map</span>
-                    <span>View Map</span>
-                  </button>
-
-                  <button
-                    onClick={() => handleAddToTrip(dest, 'city')}
-                    className="bg-[#4A2E18] hover:bg-[#341F0E] text-[#FFFDF9] px-4 py-2 rounded-xl text-xs font-bold shadow-xs flex items-center gap-1 cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-sm text-[#E8C59A]">bookmark_add</span>
-                    <span>Add to Trip</span>
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+      {/* ── Content Render ── */}
+      {loading ? (
+        <div className="flex justify-center items-center h-64">
+          <span className="material-symbols-outlined text-4xl text-[#4A2E18] animate-spin">progress_activity</span>
         </div>
-      )}
-
-      {/* ── TAB 2: ACTIVITIES SEARCH ── */}
-      {activeTab === 'activities' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredActivities.map((act) => (
-            <div
-              key={act.id}
-              className="bg-white rounded-3xl p-5 border border-[#EADBCE] shadow-warm-md hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex justify-between items-start mb-2">
-                  <span className="text-[10px] font-bold uppercase px-2.5 py-1 rounded-full bg-[#FAF7F2] border border-[#EADBCE] text-[#C88A4B]">
-                    {act.category}
-                  </span>
-                  <span className="text-xs font-bold text-[#4A2E18]">
-                    {act.cost > 0 ? `$${act.cost}` : 'Free'}
-                  </span>
+      ) : (
+        <>
+          {/* TAB 1: CITIES */}
+          {activeTab === 'cities' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 animate-fadeIn">
+              {destinations.length === 0 ? (
+                <div className="col-span-full bg-white rounded-3xl p-16 text-center border border-dashed border-[#D8C6B6]">
+                  <span className="material-symbols-outlined text-5xl text-[#8A715F] mb-3">travel_explore</span>
+                  <p className="text-sm font-bold text-[#2A180C]">No destinations found matching your filters.</p>
                 </div>
-
-                <h3 className="text-sm font-bold text-[#2A180C] mb-1">{act.name}</h3>
-                <p className="text-xs text-[#8A715F] mb-2 flex items-center gap-1">
-                  <span className="material-symbols-outlined text-xs text-[#C88A4B]">location_on</span>
-                  {act.city} • {act.duration}
-                </p>
-                <p className="text-xs text-[#6B5646] line-clamp-3 leading-relaxed">{act.description}</p>
-              </div>
-
-              <div className="pt-4 mt-3 border-t border-[#EADBCE]/60 flex justify-end">
-                <button
-                  onClick={() => handleAddToTrip(act, 'activity')}
-                  className="bg-[#4A2E18] hover:bg-[#341F0E] text-[#FFFDF9] px-4 py-2 rounded-xl text-xs font-bold shadow-xs flex items-center gap-1 cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-sm text-[#E8C59A]">add_circle</span>
-                  <span>Add to Itinerary</span>
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* ── TAB 3: LIVE GOOGLE MAP & DISTANCE CALCULATOR ── */}
-      {activeTab === 'map' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* Destination Selector Sidebar (4 cols) */}
-          <div className="lg:col-span-4 space-y-4">
-            <div className="bg-white rounded-3xl p-5 border border-[#EADBCE] shadow-warm-md">
-              <h2 className="text-sm font-bold text-[#2A180C] uppercase tracking-wider mb-3">
-                Select Destination
-              </h2>
-              <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
-                {mockDestinations.map((dest) => {
+              ) : (
+                destinations.map((dest) => {
                   const dist = getDistanceDisplay(dest);
-                  const isSelected = selectedMapDest.id === dest.id;
                   return (
                     <div
                       key={dest.id}
-                      onClick={() => setSelectedMapDest(dest)}
-                      className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
-                        isSelected
-                          ? 'bg-[#4A2E18] text-[#FFFDF9] border-[#4A2E18] shadow-sm'
-                          : 'bg-[#FAF7F2] text-[#2A180C] border-[#EADBCE] hover:border-[#4A2E18]'
-                      }`}
+                      className="bg-white rounded-3xl overflow-hidden border border-[#EADBCE] shadow-warm-md hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group"
                     >
-                      <div className="flex items-center gap-3">
-                        <img
-                          src={dest.image}
-                          alt={dest.name}
-                          className="w-12 h-12 rounded-xl object-cover border border-[#EADBCE]"
-                        />
-                        <div>
-                          <p className="text-xs font-bold">{dest.name}</p>
-                          <p className={`text-[11px] ${isSelected ? 'text-[#EADBCE]' : 'text-[#8A715F]'}`}>
-                            {dest.state}
-                          </p>
+                      <div>
+                        <div className="relative h-48 w-full overflow-hidden">
+                          <img
+                            src={dest.image}
+                            alt={dest.name}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+                          
+                          {/* Badge */}
+                          <span className="absolute top-3 left-3 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#D4A373] text-[#2A180C] shadow-sm">
+                            {dest.badge}
+                          </span>
+
+                          {/* Live Distance Pill */}
+                          {dist && (
+                            <span className="absolute bottom-3 left-3 bg-black/65 backdrop-blur-md text-white text-[11px] font-bold px-3 py-1 rounded-full flex items-center gap-1">
+                              <span className="material-symbols-outlined text-xs text-[#E8C59A]">near_me</span>
+                              <span>{dist.km.toLocaleString()} km away ({dist.miles.toLocaleString()} mi)</span>
+                            </span>
+                          )}
+
+                          <span className="absolute top-3 right-3 px-2 py-0.5 rounded bg-black/50 text-white text-[10px] font-bold">
+                            {dest.priceLevel}
+                          </span>
+                        </div>
+
+                        <div className="p-5">
+                          <div className="flex justify-between items-start mb-1">
+                            <div>
+                              <h3 className="text-lg font-bold text-[#2A180C]">{dest.name.split(',')[0]}</h3>
+                              <p className="text-xs text-[#8A715F]">{dest.state || dest.name.split(',')[1]?.trim()}, {dest.country}</p>
+                            </div>
+                            <span className="text-xs font-bold text-[#C88A4B] bg-[#FAF7F2] border border-[#EADBCE] px-2 py-0.5 rounded-lg">
+                              Best: {dest.bestTime}
+                            </span>
+                          </div>
+
+                          <p className="text-xs text-[#6B5646] line-clamp-2 mt-2 leading-relaxed">{dest.description}</p>
                         </div>
                       </div>
 
-                      {dist && (
-                        <div className="text-right">
-                          <span className={`text-xs font-extrabold block ${isSelected ? 'text-[#E8C59A]' : 'text-[#C88A4B]'}`}>
-                            {dist.km.toLocaleString()} km
-                          </span>
-                          <span className={`text-[9px] ${isSelected ? 'text-[#EADBCE]' : 'text-[#8A715F]'}`}>
-                            {dist.miles.toLocaleString()} mi
-                          </span>
-                        </div>
-                      )}
+                      <div className="p-5 pt-0 border-t border-[#EADBCE]/60 flex items-center justify-between gap-2 mt-2">
+                        <button
+                          onClick={() => {
+                            setSelectedMapDest(dest);
+                            setActiveTab('map');
+                          }}
+                          className="bg-[#FAF7F2] hover:bg-[#F5ECE1] border border-[#D8C6B6] text-[#4A2E18] px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-sm text-[#C88A4B]">map</span>
+                          <span>View Map</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleAddToTrip(dest, 'city')}
+                          className="bg-[#4A2E18] hover:bg-[#341F0E] text-[#FFFDF9] px-4 py-2 rounded-xl text-xs font-bold shadow-xs flex items-center gap-1 cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-sm text-[#E8C59A]">bookmark_add</span>
+                          <span>Add to Trip</span>
+                        </button>
+                      </div>
                     </div>
                   );
-                })}
-              </div>
+                })
+              )}
             </div>
-          </div>
+          )}
 
-          {/* Interactive Google Map & Route Details (8 cols) */}
-          <div className="lg:col-span-8 space-y-6">
-            <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#EADBCE] shadow-warm-md">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-4 mb-4 border-b border-[#EADBCE]">
-                <div>
-                  <span className="text-[10px] font-bold text-[#C88A4B] uppercase tracking-wider">
-                    Google Maps Satellite & Terrain View
-                  </span>
-                  <h2 className="text-2xl font-extrabold text-[#2A180C]">
-                    {selectedMapDest.name}, {selectedMapDest.state}
-                  </h2>
+          {/* TAB 2: ACTIVITIES */}
+          {activeTab === 'activities' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 animate-fadeIn">
+              {activities.length === 0 ? (
+                <div className="col-span-full bg-white rounded-3xl p-16 text-center border border-dashed border-[#D8C6B6]">
+                  <span className="material-symbols-outlined text-5xl text-[#8A715F] mb-3">local_activity</span>
+                  <p className="text-sm font-bold text-[#2A180C]">No activities found matching your filters.</p>
                 </div>
+              ) : (
+                activities.map((act) => (
+                  <div
+                    key={act.id}
+                    className="bg-white rounded-3xl p-5 border border-[#EADBCE] shadow-warm-md hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between"
+                  >
+                    <div>
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="text-[10px] font-bold uppercase px-2.5 py-1 rounded-full bg-[#FAF7F2] border border-[#EADBCE] text-[#C88A4B]">
+                          {act.category}
+                        </span>
+                        <span className="text-xs font-bold text-[#4A2E18]">
+                          {act.cost > 0 ? `$${act.cost}` : 'Free'}
+                        </span>
+                      </div>
 
-                {/* Google Maps Route Action */}
-                <a
-                  href={`https://www.google.com/maps/dir/?api=1&origin=${userCoords?.lat || 28.6139},${userCoords?.lng || 77.2090}&destination=${selectedMapDest.lat},${selectedMapDest.lng}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="bg-[#4A2E18] hover:bg-[#341F0E] text-[#FFFDF9] px-5 py-2.5 rounded-xl text-xs font-bold shadow-md shadow-[#4A2E18]/20 flex items-center gap-2 cursor-pointer transition-all active:scale-95 whitespace-nowrap"
-                >
-                  <span className="material-symbols-outlined text-base text-[#E8C59A]">directions</span>
-                  <span>Get Live Directions in Google Maps</span>
-                </a>
-              </div>
+                      <h3 className="text-sm font-bold text-[#2A180C] mb-1">{act.name}</h3>
+                      <p className="text-xs text-[#8A715F] mb-2 flex items-center gap-1">
+                        <span className="material-symbols-outlined text-xs text-[#C88A4B]">location_on</span>
+                        {act.city} • {act.duration} mins
+                      </p>
+                      <p className="text-xs text-[#6B5646] line-clamp-3 leading-relaxed">{act.description}</p>
+                    </div>
 
-              {/* Travel Time Estimates Breakdown */}
-              {(() => {
-                const dist = getDistanceDisplay(selectedMapDest);
-                if (!dist) return null;
-                const roadHours = Math.round(dist.km / 65);
-                const trainHours = Math.round(dist.km / 85);
-                const flightHours = (dist.km / 600 + 1.5).toFixed(1);
-                return (
-                  <div className="grid grid-cols-3 gap-3 mb-6">
-                    <div className="bg-[#FAF7F2] p-3 rounded-2xl border border-[#EADBCE] text-center">
-                      <span className="material-symbols-outlined text-[#4A2E18] text-xl">directions_car</span>
-                      <p className="text-xs font-bold text-[#2A180C] mt-0.5">~{roadHours} Hours</p>
-                      <p className="text-[10px] text-[#8A715F]">Road / Cab</p>
-                    </div>
-                    <div className="bg-[#FAF7F2] p-3 rounded-2xl border border-[#EADBCE] text-center">
-                      <span className="material-symbols-outlined text-[#4A2E18] text-xl">train</span>
-                      <p className="text-xs font-bold text-[#2A180C] mt-0.5">~{trainHours} Hours</p>
-                      <p className="text-[10px] text-[#8A715F]">Express Train</p>
-                    </div>
-                    <div className="bg-[#FAF7F2] p-3 rounded-2xl border border-[#EADBCE] text-center">
-                      <span className="material-symbols-outlined text-[#4A2E18] text-xl">flight</span>
-                      <p className="text-xs font-bold text-[#2A180C] mt-0.5">~{flightHours} Hours</p>
-                      <p className="text-[10px] text-[#8A715F]">Flight Transfer</p>
+                    <div className="pt-4 mt-3 border-t border-[#EADBCE]/60 flex justify-end">
+                      <button
+                        onClick={() => handleAddToTrip(act, 'activity')}
+                        className="bg-[#4A2E18] hover:bg-[#341F0E] text-[#FFFDF9] px-4 py-2 rounded-xl text-xs font-bold shadow-xs flex items-center gap-1 cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-sm text-[#E8C59A]">add_circle</span>
+                        <span>Add to Itinerary</span>
+                      </button>
                     </div>
                   </div>
-                );
-              })()}
+                ))
+              )}
+            </div>
+          )}
 
-              {/* Embedded Google Map Iframe */}
-              <div className="relative h-[380px] rounded-2xl overflow-hidden border border-[#EADBCE] shadow-inner">
-                <iframe
-                  title={`Google Map for ${selectedMapDest.name}`}
-                  width="100%"
-                  height="100%"
-                  style={{ border: 0 }}
-                  loading="lazy"
-                  allowFullScreen
-                  src={`https://maps.google.com/maps?q=${selectedMapDest.lat},${selectedMapDest.lng}&hl=en&z=11&output=embed`}
-                />
+          {/* TAB 3: LIVE GOOGLE MAP */}
+          {activeTab === 'map' && selectedMapDest && (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-fadeIn">
+              {/* Destination Selector Sidebar */}
+              <div className="lg:col-span-4 space-y-4">
+                <div className="bg-white rounded-3xl p-5 border border-[#EADBCE] shadow-warm-md">
+                  <h2 className="text-sm font-bold text-[#2A180C] uppercase tracking-wider mb-3">
+                    Select Destination
+                  </h2>
+                  <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
+                    {destinations.map((dest) => {
+                      const dist = getDistanceDisplay(dest);
+                      const isSelected = selectedMapDest.id === dest.id;
+                      return (
+                        <div
+                          key={dest.id}
+                          onClick={() => setSelectedMapDest(dest)}
+                          className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
+                            isSelected
+                              ? 'bg-[#4A2E18] text-[#FFFDF9] border-[#4A2E18] shadow-sm'
+                              : 'bg-[#FAF7F2] text-[#2A180C] border-[#EADBCE] hover:border-[#4A2E18]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <img
+                              src={dest.image}
+                              alt={dest.name}
+                              className="w-12 h-12 rounded-xl object-cover border border-[#EADBCE]"
+                            />
+                            <div>
+                              <p className="text-xs font-bold">{dest.name.split(',')[0]}</p>
+                              <p className={`text-[11px] ${isSelected ? 'text-[#EADBCE]' : 'text-[#8A715F]'}`}>
+                                {dest.state || dest.name.split(',')[1]?.trim()}
+                              </p>
+                            </div>
+                          </div>
+
+                          {dist && (
+                            <div className="text-right">
+                              <span className={`text-xs font-extrabold block ${isSelected ? 'text-[#E8C59A]' : 'text-[#C88A4B]'}`}>
+                                {dist.km.toLocaleString()} km
+                              </span>
+                              <span className={`text-[9px] ${isSelected ? 'text-[#EADBCE]' : 'text-[#8A715F]'}`}>
+                                {dist.miles.toLocaleString()} mi
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Interactive Google Map & Route Details */}
+              <div className="lg:col-span-8 space-y-6">
+                <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#EADBCE] shadow-warm-md">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-4 mb-4 border-b border-[#EADBCE]">
+                    <div>
+                      <span className="text-[10px] font-bold text-[#C88A4B] uppercase tracking-wider">
+                        Google Maps Satellite & Terrain View
+                      </span>
+                      <h2 className="text-2xl font-extrabold text-[#2A180C]">
+                        {selectedMapDest.name}
+                      </h2>
+                    </div>
+
+                    {/* Google Maps Route Action */}
+                    <a
+                      href={`https://www.google.com/maps/dir/?api=1&origin=${userCoords?.lat || 28.6139},${userCoords?.lng || 77.2090}&destination=${selectedMapDest.lat},${selectedMapDest.lng}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="bg-[#4A2E18] hover:bg-[#341F0E] text-[#FFFDF9] px-5 py-2.5 rounded-xl text-xs font-bold shadow-md shadow-[#4A2E18]/20 flex items-center gap-2 cursor-pointer transition-all active:scale-95 whitespace-nowrap"
+                    >
+                      <span className="material-symbols-outlined text-base text-[#E8C59A]">directions</span>
+                      <span>Get Live Directions in Google Maps</span>
+                    </a>
+                  </div>
+
+                  {/* Travel Time Estimates Breakdown */}
+                  {(() => {
+                    const dist = getDistanceDisplay(selectedMapDest);
+                    if (!dist) return null;
+                    const roadHours = Math.round(dist.km / 65);
+                    const trainHours = Math.round(dist.km / 85);
+                    const flightHours = (dist.km / 600 + 1.5).toFixed(1);
+                    return (
+                      <div className="grid grid-cols-3 gap-3 mb-6">
+                        <div className="bg-[#FAF7F2] p-3 rounded-2xl border border-[#EADBCE] text-center">
+                          <span className="material-symbols-outlined text-[#4A2E18] text-xl">directions_car</span>
+                          <p className="text-xs font-bold text-[#2A180C] mt-0.5">~{roadHours} Hours</p>
+                          <p className="text-[10px] text-[#8A715F]">Road / Cab</p>
+                        </div>
+                        <div className="bg-[#FAF7F2] p-3 rounded-2xl border border-[#EADBCE] text-center">
+                          <span className="material-symbols-outlined text-[#4A2E18] text-xl">train</span>
+                          <p className="text-xs font-bold text-[#2A180C] mt-0.5">~{trainHours} Hours</p>
+                          <p className="text-[10px] text-[#8A715F]">Express Train</p>
+                        </div>
+                        <div className="bg-[#FAF7F2] p-3 rounded-2xl border border-[#EADBCE] text-center">
+                          <span className="material-symbols-outlined text-[#4A2E18] text-xl">flight</span>
+                          <p className="text-xs font-bold text-[#2A180C] mt-0.5">~{flightHours} Hours</p>
+                          <p className="text-[10px] text-[#8A715F]">Flight Transfer</p>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Embedded Google Map Iframe */}
+                  <div className="relative h-[380px] rounded-2xl overflow-hidden border border-[#EADBCE] shadow-inner">
+                    <iframe
+                      title={`Google Map for ${selectedMapDest.name}`}
+                      width="100%"
+                      height="100%"
+                      style={{ border: 0 }}
+                      loading="lazy"
+                      allowFullScreen
+                      src={`https://maps.google.com/maps?q=${selectedMapDest.lat},${selectedMapDest.lng}&hl=en&z=11&output=embed`}
+                    />
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
+          )}
+        </>
       )}
     </div>
   );
