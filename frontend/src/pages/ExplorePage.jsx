@@ -4,7 +4,7 @@ import { mockDestinations } from '../services/mockData';
 import { useTrips } from '../context/TripContext';
 import { exploreApi } from '../services/api';
 
-const REGIONS = ['All', 'North India', 'North East India', 'Islands', 'International'];
+const REGIONS = ['All', 'North India', 'South India', 'East India', 'West India', 'Central India', 'North East India', 'Islands', 'International'];
 const ACTIVITY_TYPES = ['All', 'Spiritual', 'Heritage', 'Nature', 'Adventure', 'Food & Dining', 'Culture'];
 
 // Haversine formula to compute accurate distance in km
