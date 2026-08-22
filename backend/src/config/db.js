@@ -138,6 +138,55 @@ async function query(text, params = []) {
     return { rows: found };
   }
 
+  if (normalizedText.includes('SELECT USER_ID FROM TRIPS WHERE ID =')) {
+    const found = memoryStore.trips.filter(t => t.id === Number(params[0]));
+    return { rows: found };
+  }
+
+  if (normalizedText.includes('SELECT ID FROM TRIPS WHERE SHARE_TOKEN =')) {
+    const found = memoryStore.trips.filter(t => t.share_token === params[0] && t.is_public === true);
+    return { rows: found };
+  }
+
+  if (normalizedText.includes('UPDATE TRIPS')) {
+    if (normalizedText.includes('SHARE_TOKEN =')) {
+      const token = params[0];
+      const tripId = params[1];
+      const trip = memoryStore.trips.find(t => t.id === Number(tripId));
+      if (trip) {
+        trip.is_public = true;
+        trip.share_token = token;
+      }
+      return { rows: trip ? [trip] : [] };
+    }
+    if (normalizedText.includes('STATUS =') && !normalizedText.includes('NAME =')) {
+      const tripId = params[0];
+      const trip = memoryStore.trips.find(t => t.id === Number(tripId));
+      if (trip) {
+        trip.status = 'confirmed';
+      }
+      return { rows: trip ? [trip] : [] };
+    }
+    const tripId = params[7];
+    const trip = memoryStore.trips.find(t => t.id === Number(tripId));
+    if (trip) {
+      if (params[0] !== undefined && params[0] !== null) trip.name = params[0];
+      if (params[1] !== undefined && params[1] !== null) trip.description = params[1];
+      if (params[2] !== undefined && params[2] !== null) trip.start_date = params[2];
+      if (params[3] !== undefined && params[3] !== null) trip.end_date = params[3];
+      if (params[4] !== undefined && params[4] !== null) trip.cover_photo_url = params[4];
+      if (params[5] !== undefined && params[5] !== null) trip.is_public = params[5];
+      if (params[6] !== undefined && params[6] !== null) trip.status = params[6];
+    }
+    return { rows: trip ? [trip] : [] };
+  }
+
+  if (normalizedText.includes('DELETE FROM TRIPS WHERE ID =')) {
+    const tripId = Number(params[0]);
+    memoryStore.trips = memoryStore.trips.filter(t => t.id !== tripId);
+    return { rows: [] };
+  }
+
   if (normalizedText.includes('INSERT INTO BUDGET')) {
     const b = { id: Date.now(), trip_id: params[0], total_budget: params[1], spent_so_far: params[2], currency: params[3] };
     memoryStore.budget.push(b);
@@ -173,7 +222,10 @@ async function query(text, params = []) {
   }
 
   if (normalizedText.includes('DELETE FROM STOPS WHERE TRIP_ID =')) {
-    memoryStore.stops = memoryStore.stops.filter(s => s.trip_id !== Number(params[0]));
+    const tripId = Number(params[0]);
+    const stopIds = memoryStore.stops.filter(s => s.trip_id === tripId).map(s => s.id);
+    memoryStore.activities = memoryStore.activities.filter(a => !stopIds.includes(a.stop_id));
+    memoryStore.stops = memoryStore.stops.filter(s => s.trip_id !== tripId);
     return { rows: [] };
   }
 
